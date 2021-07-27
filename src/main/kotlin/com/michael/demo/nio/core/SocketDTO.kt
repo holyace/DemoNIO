@@ -1,14 +1,15 @@
 package com.michael.demo.nio.core
 
+import com.michael.demo.nio.ext.isEmpty
 import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
 import java.nio.charset.Charset
 import kotlin.math.min
 
-class SocketDTO {
+class SocketDTO private constructor() {
 
     companion object {
-        const val BUFFER_SIZE = 1024
+        const val BUFFER_SIZE = 10
 
         const val TYPE_UNKNOWN = 0
         const val TYPE_STRING = 1
@@ -46,26 +47,42 @@ class SocketDTO {
 
         private val mReadBuffer = ByteBuffer.allocate(BUFFER_SIZE)
 
-        fun read(socketChannel: SocketChannel, size: Int = BUFFER_SIZE, readTo: SocketDTO? = null): SocketDTO? {
-            mReadBuffer.clear()
-            var read = socketChannel.read(mReadBuffer)
-            if (read <= 0) return readTo
-
-            mReadBuffer.flip()
-
-            val ret = readTo ?: SocketDTO()
-
-            ret.mSize = mReadBuffer.get().toInt()
-            ret.mType = mReadBuffer.get().toInt()
-            val body = ByteArray(size)
-            val remaining = mReadBuffer.remaining()
-            mReadBuffer.get(body, 0, min(remaining, size))
-            ret.mData = body
-            if (size > remaining) {
-                return read(socketChannel, size - read, ret)
+        fun read(socketChannel: SocketChannel, readTo: SocketDTO? = null, offset: Int = 0): SocketDTO? {
+            var totalRead = offset
+            var ret = readTo
+            if (!mReadBuffer.isEmpty()) {
+                ret = readTo?: SocketDTO()
+                totalRead += readBuffer(mReadBuffer, ret, offset)
             }
 
+            mReadBuffer.clear()
+            val read = socketChannel.read(mReadBuffer)
+            if (read <= 0) return readTo
+
+            if (ret == null) ret = SocketDTO()
+            mReadBuffer.flip()
+            totalRead += readBuffer(mReadBuffer, ret, totalRead)
+
+            if (ret.mSize - totalRead > 0) {
+                read(socketChannel, ret, totalRead)
+            }
             return ret
+        }
+
+        private fun readBuffer(byteBuffer: ByteBuffer, dest: SocketDTO, offset: Int = 0): Int {
+            if (dest.mSize == 0 && byteBuffer.hasRemaining()) {
+                dest.mSize = byteBuffer.get().toInt()
+                dest.mData = ByteArray(dest.mSize)
+            }
+            if (dest.mType == TYPE_UNKNOWN && byteBuffer.hasRemaining()) {
+                dest.mType = byteBuffer.get().toInt()
+            }
+            val leftToRead = dest.mSize - offset
+            val realRead = min(byteBuffer.remaining(), leftToRead)
+            if (realRead > 0) {
+                byteBuffer.get(dest.mData, offset, realRead)
+            }
+            return realRead
         }
     }
 
@@ -75,15 +92,18 @@ class SocketDTO {
 
         fun write(socketChannel: SocketChannel, socketDTO: SocketDTO, offset: Int = 0, length: Int = socketDTO.mSize): Boolean {
             mWriteBuffer.clear()
-            mWriteBuffer.put(socketDTO.mSize.toByte())
-            mWriteBuffer.put(socketDTO.mType.toByte())
+            if (offset <= 0) {
+                mWriteBuffer.put(socketDTO.mSize.toByte())
+                mWriteBuffer.put(socketDTO.mType.toByte())
+            }
             val remaining = mWriteBuffer.remaining()
             val write = min(remaining, length)
             mWriteBuffer.put(socketDTO.mData, offset, write)
+            val position = offset + write
             mWriteBuffer.flip()
             socketChannel.write(mWriteBuffer)
-            if (socketDTO.mSize > remaining) {
-                return write(socketChannel, socketDTO, write, socketDTO.mSize - write)
+            if (socketDTO.mSize > position) {
+                return write(socketChannel, socketDTO, position, socketDTO.mSize - position)
             }
             return true
         }

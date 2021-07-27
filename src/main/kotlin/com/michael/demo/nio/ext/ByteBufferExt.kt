@@ -13,3 +13,10 @@ fun ByteBuffer.readLine(): ByteArray? {
     return bytes.toByteArray()
 }
 
+fun ByteBuffer.isEmpty(): Boolean {
+    val size = capacity()
+    val isEmpty = remaining() == size && limit() == size
+    val hasLeft = hasRemaining()
+    return isEmpty || !hasLeft
+}
+
