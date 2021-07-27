@@ -54,7 +54,7 @@ class Server(private val port: Int): BaseSocketChannel2() {
             if (now - timestamp >= 3000) {
                 timestamp = now
                 clientList.forEach {
-                    val ret = sendData(it, "heart bit $count")
+                    val ret = sendData(it, "server heart bit $count")
                     if (ret.ret != 0) {
                         println("server heart bit $count fail: $ret")
                     }
